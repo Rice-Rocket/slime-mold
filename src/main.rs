@@ -18,9 +18,10 @@ use bevy::{
 };
 use std::borrow::Cow;
 
-const SIZE: (u32, u32) = (320, 180);
-// const SIZE: (u32, u32) = (640, 360);
-const NUM_AGENTS: u32 = 100;
+// const SIZE: (u32, u32) = (3840, 2160);
+const SIZE: (u32, u32) = (2560, 1440);
+// const SIZE: (u32, u32) = (1280, 720);
+const NUM_AGENTS: u32 = 200_000;
 const WORKGROUP_SIZE: u32 = 8;
 
 fn main() {
@@ -54,7 +55,7 @@ fn setup(
             depth_or_array_layers: 1,
         },
         TextureDimension::D2,
-        &[0, 0, 0, 255],
+        &[0, 0, 0, 0],
         TextureFormat::Rgba8Unorm,
     );
     image.texture_descriptor.usage =
@@ -170,12 +171,12 @@ fn prepare_settings_buffer(
     buffer.dim_x = SIZE.0 as i32;
     buffer.dim_y = SIZE.1 as i32;
     buffer.move_speed = 50.0;
-    buffer.turn_speed = 5.0;
-    buffer.trail_weight = 20.0;
-    buffer.decay_rate = 1.0;
-    buffer.diffuse_rate = 1.0;
-    buffer.sensor_angle_spacing = 1.0;
-    buffer.sensor_offset_dst = 1.0;
+    buffer.turn_speed = 10.0;
+    buffer.trail_weight = 50.0;
+    buffer.decay_rate = 0.25;
+    buffer.diffuse_rate = 5.0;
+    buffer.sensor_angle_spacing = 2.0;
+    buffer.sensor_offset_dst = 15.0;
     buffer.sensor_size = 3;
 
     globals_buffer.buffer.write_buffer(&device, &queue);
