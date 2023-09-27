@@ -3,6 +3,7 @@
 //! Compute shaders use the GPU for computing arbitrary information, that may be independent of what
 //! is rendered to the screen.
 
+#[allow(unused_imports)]
 use bevy::{
     prelude::*,
     render::{
@@ -11,14 +12,15 @@ use bevy::{
         render_graph::{self, RenderGraph},
         render_resource::*,
         renderer::{RenderContext, RenderDevice, RenderQueue},
-        Render, RenderApp, RenderSet,
+        Render, RenderApp, RenderSet, Extract,
     },
-    window::WindowPlugin,
+    window::{WindowPlugin, PrimaryWindow},
 };
 use std::borrow::Cow;
 
-const SIZE: (u32, u32) = (640, 360);
-const NUM_AGENTS: u32 = 1000;
+const SIZE: (u32, u32) = (320, 180);
+// const SIZE: (u32, u32) = (640, 360);
+const NUM_AGENTS: u32 = 100;
 const WORKGROUP_SIZE: u32 = 8;
 
 fn main() {
@@ -29,17 +31,22 @@ fn main() {
                 primary_window: Some(Window {
                     // uncomment for unthrottled FPS
                     // present_mode: bevy::window::PresentMode::AutoNoVsync,
+                    title: String::from("Physarum (Slime Mold)"),
                     ..default()
                 }),
                 ..default()
-            }),
+            }).set(ImagePlugin::default_nearest()),
             SlimeMoldComputePlugin,
         ))
         .add_systems(Startup, setup)
         .run();
 }
 
-fn setup(mut commands: Commands, mut images: ResMut<Assets<Image>>) {
+fn setup(
+    mut commands: Commands, 
+    window_query: Query<&Window, With<PrimaryWindow>>, 
+    mut images: ResMut<Assets<Image>>
+) {
     let mut image = Image::new_fill(
         Extent3d {
             width: SIZE.0,
@@ -54,12 +61,11 @@ fn setup(mut commands: Commands, mut images: ResMut<Assets<Image>>) {
         TextureUsages::COPY_DST | TextureUsages::STORAGE_BINDING | TextureUsages::TEXTURE_BINDING;
     let image = images.add(image);
 
-    // let buf = StorageBuffer::from(AgentsArray { arr: [[0.0; 3]; NUM_AGENTS as usize] });
-    // let buf: BufferVec<[f32; 3]> = BufferVec::new(BufferUsages::STORAGE);
+    let window = window_query.get_single().unwrap();
 
     commands.spawn(SpriteBundle {
         sprite: Sprite {
-            custom_size: Some(Vec2::new(SIZE.0 as f32, SIZE.1 as f32)),
+            custom_size: Some(Vec2::new(window.width(), window.height())),
             ..default()
         },
         texture: image.clone(),
@@ -68,18 +74,20 @@ fn setup(mut commands: Commands, mut images: ResMut<Assets<Image>>) {
     commands.spawn(Camera2dBundle::default());
 
     commands.insert_resource(SlimeMoldImage(image));
-    // commands.insert_resource(SlimeMoldAgentsBuffer(buf));
 }
 
 pub struct SlimeMoldComputePlugin;
 
 impl Plugin for SlimeMoldComputePlugin {
     fn build(&self, app: &mut App) {
-        // Extract the slime mold image resource from the main world into the render world
-        // for operation on by the compute shader and display on the sprite.
         app.add_plugins(ExtractResourcePlugin::<SlimeMoldImage>::default());
         let render_app = app.sub_app_mut(RenderApp);
-        render_app.add_systems(Render, queue_bind_group.in_set(RenderSet::Queue));
+        render_app
+            .init_resource::<SettingsBuffer>()
+            .init_resource::<Time>()
+            .add_systems(ExtractSchedule, extract_time)
+            .add_systems(Render, prepare_settings_buffer.in_set(RenderSet::Prepare))
+            .add_systems(Render, queue_bind_group.in_set(RenderSet::Queue));
         
         let mut render_graph = render_app.world.resource_mut::<RenderGraph>();
         render_graph.add_node("slime_mold", SlimeMoldNode::default());
@@ -118,6 +126,63 @@ struct SlimeMoldAgentsBuffer {
     size: u64,
 }
 
+#[derive(Default, Clone, Resource, ExtractResource, Reflect, ShaderType)]
+#[reflect(Resource)]
+struct SettingsUniform {
+    dim_x: i32,
+    dim_y: i32,
+    delta_time: f32,
+    time: f32,
+
+    move_speed: f32,
+    turn_speed: f32,
+
+    trail_weight: f32,
+    decay_rate: f32,
+    diffuse_rate: f32,
+
+    sensor_angle_spacing: f32,
+    sensor_offset_dst: f32,
+    sensor_size: i32,
+    
+    // #[cfg(all(feature = "webgl", target_arch = "wasm32"))]
+    // _padding: f32,
+}
+
+#[derive(Resource, Default)]
+struct SettingsBuffer {
+    buffer: UniformBuffer<SettingsUniform>,
+}
+
+fn extract_time(mut commands: Commands, time: Extract<Res<Time>>) {
+    commands.insert_resource(time.clone());
+}
+
+fn prepare_settings_buffer(
+    device: Res<RenderDevice>,
+    queue: Res<RenderQueue>,
+    mut globals_buffer: ResMut<SettingsBuffer>,
+    time: Res<Time>,
+) {
+    let buffer = globals_buffer.buffer.get_mut();
+    buffer.delta_time = time.delta_seconds();
+    buffer.time = time.elapsed_seconds();
+    buffer.dim_x = SIZE.0 as i32;
+    buffer.dim_y = SIZE.1 as i32;
+    buffer.move_speed = 50.0;
+    buffer.turn_speed = 5.0;
+    buffer.trail_weight = 20.0;
+    buffer.decay_rate = 1.0;
+    buffer.diffuse_rate = 1.0;
+    buffer.sensor_angle_spacing = 1.0;
+    buffer.sensor_offset_dst = 1.0;
+    buffer.sensor_size = 3;
+
+    globals_buffer.buffer.write_buffer(&device, &queue);
+}
+
+
+
 impl FromWorld for SlimeMoldAgentsBuffer {
     fn from_world(world: &mut World) -> Self {
         let device = world.resource::<RenderDevice>();
@@ -145,7 +210,7 @@ impl FromWorld for SlimeMoldAgentsBuffer {
 }
 
 #[derive(Resource)]
-struct SlimeMoldBindGroups(BindGroup, BindGroup);
+struct SlimeMoldBindGroups(BindGroup, BindGroup, BindGroup);
 
 fn queue_bind_group(
     mut commands: Commands,
@@ -153,6 +218,7 @@ fn queue_bind_group(
     gpu_images: Res<RenderAssets<Image>>,
     slime_mold_image: Res<SlimeMoldImage>,
     slime_mold_agents_buf: Res<SlimeMoldAgentsBuffer>,
+    slime_mold_settings: Res<SettingsBuffer>,
     render_device: Res<RenderDevice>,
 ) {
     let view = &gpu_images[&slime_mold_image.0];
@@ -170,16 +236,24 @@ fn queue_bind_group(
         entries: &[BindGroupEntry {
             binding: 0,
             resource: slime_mold_agents_buf.storage.as_entire_binding(),
-            // resource: slime_mold_agents_buf.0.binding().unwrap(),
         }],
     });
-    commands.insert_resource(SlimeMoldBindGroups(bind_group_tex, bind_group_buf));
+    let bind_group_settings = render_device.create_bind_group(&BindGroupDescriptor {
+        label: None,
+        layout: &pipeline.settings_bind_group_layout,
+        entries: &[BindGroupEntry {
+            binding: 0,
+            resource: slime_mold_settings.buffer.binding().unwrap(),
+        }],
+    });
+    commands.insert_resource(SlimeMoldBindGroups(bind_group_tex, bind_group_buf, bind_group_settings));
 }
 
 #[derive(Resource)]
 pub struct SlimeMoldPipeline {
     texture_bind_group_layout: BindGroupLayout,
     agent_buf_bind_group_layout: BindGroupLayout,
+    settings_bind_group_layout: BindGroupLayout,
     init_pipeline: CachedComputePipelineId,
     update_agents_pipeline: CachedComputePipelineId,
     update_trailmap_pipeline: CachedComputePipelineId,
@@ -187,9 +261,10 @@ pub struct SlimeMoldPipeline {
 
 impl FromWorld for SlimeMoldPipeline {
     fn from_world(world: &mut World) -> Self {
+        let render_device = world.resource::<RenderDevice>();
+
         let texture_bind_group_layout =
-            world
-                .resource::<RenderDevice>()
+            render_device
                 .create_bind_group_layout(&BindGroupLayoutDescriptor {
                     label: None,
                     entries: &[BindGroupLayoutEntry {
@@ -204,8 +279,7 @@ impl FromWorld for SlimeMoldPipeline {
                     }],
                 });
         let agent_buf_bind_group_layout = 
-            world
-                .resource::<RenderDevice>()
+            render_device
                 .create_bind_group_layout(&BindGroupLayoutDescriptor {
                     label: None,
                     entries: &[BindGroupLayoutEntry {
@@ -216,9 +290,22 @@ impl FromWorld for SlimeMoldPipeline {
                                 read_only: false,
                             },
                             has_dynamic_offset: false,
-                            // min_binding_size: None,
                             min_binding_size: BufferSize::new((NUM_AGENTS * 3 * std::mem::size_of::<f32>() as u32) as u64),
-                            // min_binding_size: std::num::NonZeroU64::new(16u64),
+                        },
+                        count: None,
+                    }]
+                });
+        let settings_bind_group_layout = 
+            render_device
+                .create_bind_group_layout(&BindGroupLayoutDescriptor {
+                    label: None,
+                    entries: &[BindGroupLayoutEntry {
+                        binding: 0,
+                        visibility: ShaderStages::COMPUTE,
+                        ty: BindingType::Buffer {
+                            ty: BufferBindingType::Uniform,
+                            has_dynamic_offset: false,
+                            min_binding_size: None,
                         },
                         count: None,
                     }]
@@ -229,7 +316,7 @@ impl FromWorld for SlimeMoldPipeline {
         let pipeline_cache = world.resource::<PipelineCache>();
         let init_pipeline = pipeline_cache.queue_compute_pipeline(ComputePipelineDescriptor {
             label: None,
-            layout: vec![texture_bind_group_layout.clone(), agent_buf_bind_group_layout.clone()],
+            layout: vec![texture_bind_group_layout.clone(), agent_buf_bind_group_layout.clone(), settings_bind_group_layout.clone()],
             push_constant_ranges: Vec::new(),
             shader: shader.clone(),
             shader_defs: vec![],
@@ -237,7 +324,7 @@ impl FromWorld for SlimeMoldPipeline {
         });
         let update_agents_pipeline = pipeline_cache.queue_compute_pipeline(ComputePipelineDescriptor {
             label: None,
-            layout: vec![texture_bind_group_layout.clone(), agent_buf_bind_group_layout.clone()],
+            layout: vec![texture_bind_group_layout.clone(), agent_buf_bind_group_layout.clone(), settings_bind_group_layout.clone()],
             push_constant_ranges: Vec::new(),
             shader: shader.clone(),
             shader_defs: vec![],
@@ -245,7 +332,7 @@ impl FromWorld for SlimeMoldPipeline {
         });
         let update_trailmap_pipeline = pipeline_cache.queue_compute_pipeline(ComputePipelineDescriptor {
             label: None,
-            layout: vec![texture_bind_group_layout.clone(), agent_buf_bind_group_layout.clone()],
+            layout: vec![texture_bind_group_layout.clone(), agent_buf_bind_group_layout.clone(), settings_bind_group_layout.clone()],
             push_constant_ranges: Vec::new(),
             shader: shader.clone(),
             shader_defs: vec![],
@@ -255,6 +342,7 @@ impl FromWorld for SlimeMoldPipeline {
         SlimeMoldPipeline {
             texture_bind_group_layout,
             agent_buf_bind_group_layout,
+            settings_bind_group_layout,
             init_pipeline,
             update_agents_pipeline,
             update_trailmap_pipeline,
@@ -285,7 +373,6 @@ impl render_graph::Node for SlimeMoldNode {
         let pipeline = world.resource::<SlimeMoldPipeline>();
         let pipeline_cache = world.resource::<PipelineCache>();
 
-        // if the corresponding pipeline has loaded, transition to the next stage
         match self.state {
             SlimeMoldState::Loading => {
                 if let CachedPipelineState::Ok(_) =
@@ -313,6 +400,7 @@ impl render_graph::Node for SlimeMoldNode {
     ) -> Result<(), render_graph::NodeRunError> {
         let texture_bind_group = &world.resource::<SlimeMoldBindGroups>().0;
         let agents_buf_bind_group = &world.resource::<SlimeMoldBindGroups>().1;
+        let settings_bind_group = &world.resource::<SlimeMoldBindGroups>().2;
         let agents_buf = &world.resource::<SlimeMoldAgentsBuffer>();
         let pipeline_cache = world.resource::<PipelineCache>();
         let pipeline = world.resource::<SlimeMoldPipeline>();
@@ -323,8 +411,8 @@ impl render_graph::Node for SlimeMoldNode {
 
             pass.set_bind_group(0, texture_bind_group, &[]);
             pass.set_bind_group(1, agents_buf_bind_group, &[]);
+            pass.set_bind_group(2, settings_bind_group, &[]);
 
-            // select the pipeline based on the current state
             match self.state {
                 SlimeMoldState::Loading => {}
                 SlimeMoldState::Init => {
