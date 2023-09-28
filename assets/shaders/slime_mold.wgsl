@@ -55,6 +55,77 @@ fn scale01(value: u32) -> f32 {
     return f32(value) / 4294967295.0;
 }
 
+
+@compute @workgroup_size(16, 1, 1)
+fn initAgentsInwardCircle(@builtin(global_invocation_id) id: vec3<u32>, @builtin(num_workgroups) num_workgroups: vec3<u32>) {
+    let agentIdx: u32 = id.x;
+    let randomState: u32 = num_workgroups.x * id.x;
+
+    let randomRadius = random(randomState) * f32(settings.dimY) * 0.4;
+    let randomAngle = random(randomState * 2u) * TAU;
+
+    let randomPosition = vec2<f32>(f32(settings.dimX) / 2.0, f32(settings.dimY) / 2.0) + vec2<f32>(cos(randomAngle), sin(randomAngle)) * randomRadius;
+
+    storageBarrier();
+
+    agents[agentIdx] = vec3<f32>(randomPosition.x, randomPosition.y, randomAngle - PI);
+}
+@compute @workgroup_size(16, 1, 1)
+fn initAgentsOutwardCircle(@builtin(global_invocation_id) id: vec3<u32>, @builtin(num_workgroups) num_workgroups: vec3<u32>) {
+    let agentIdx: u32 = id.x;
+    let randomState: u32 = num_workgroups.x * id.x;
+
+    let randomRadius = random(randomState) * f32(settings.dimY) * 0.3;
+    let randomAngle = random(randomState * 2u) * TAU;
+
+    let randomPosition = vec2<f32>(f32(settings.dimX) / 2.0, f32(settings.dimY) / 2.0) + vec2<f32>(cos(randomAngle), sin(randomAngle)) * randomRadius;
+
+    storageBarrier();
+
+    agents[agentIdx] = vec3<f32>(randomPosition.x, randomPosition.y, randomAngle);
+}
+@compute @workgroup_size(16, 1, 1)
+fn initAgentsInwardRing(@builtin(global_invocation_id) id: vec3<u32>, @builtin(num_workgroups) num_workgroups: vec3<u32>) {
+    let agentIdx: u32 = id.x;
+    let randomState: u32 = num_workgroups.x * id.x;
+
+    let radius = f32(settings.dimY) * 0.4;
+    let randomAngle = random(randomState * 2u) * TAU;
+
+    let randomPosition = vec2<f32>(f32(settings.dimX) / 2.0, f32(settings.dimY) / 2.0) + vec2<f32>(cos(randomAngle), sin(randomAngle)) * radius;
+
+    storageBarrier();
+
+    agents[agentIdx] = vec3<f32>(randomPosition.x, randomPosition.y, randomAngle - PI);
+}
+@compute @workgroup_size(16, 1, 1)
+fn initAgentsOutwardRing(@builtin(global_invocation_id) id: vec3<u32>, @builtin(num_workgroups) num_workgroups: vec3<u32>) {
+    let agentIdx: u32 = id.x;
+    let randomState: u32 = num_workgroups.x * id.x;
+
+    let radius = f32(settings.dimY) * 0.4;
+    let randomAngle = random(randomState * 2u) * TAU;
+
+    let randomPosition = vec2<f32>(f32(settings.dimX) / 2.0, f32(settings.dimY) / 2.0) + vec2<f32>(cos(randomAngle), sin(randomAngle)) * radius;
+
+    storageBarrier();
+
+    agents[agentIdx] = vec3<f32>(randomPosition.x, randomPosition.y, randomAngle);
+}
+@compute @workgroup_size(16, 1, 1)
+fn initAgentsPoint(@builtin(global_invocation_id) id: vec3<u32>, @builtin(num_workgroups) num_workgroups: vec3<u32>) {
+    let agentIdx: u32 = id.x;
+    let randomState: u32 = num_workgroups.x * id.x;
+
+    let randomAngle = random(randomState * 2u) * TAU;
+    let position = vec2<f32>(f32(settings.dimX) / 2.0, f32(settings.dimY) / 2.0);
+
+    storageBarrier();
+
+    agents[agentIdx] = vec3<f32>(position.x, position.y, randomAngle);
+}
+
+
 fn sense(agent: vec3<f32>, sensorAngleOffset: f32) -> f32 {
     let sensorAngle = agent.z + sensorAngleOffset;
     let sensorDir = vec2<f32>(cos(sensorAngle), sin(sensorAngle));
@@ -72,21 +143,6 @@ fn sense(agent: vec3<f32>, sensorAngleOffset: f32) -> f32 {
         }
     }
     return sum;
-}
-
-@compute @workgroup_size(16, 1, 1)
-fn initAgents(@builtin(global_invocation_id) id: vec3<u32>, @builtin(num_workgroups) num_workgroups: vec3<u32>) {
-    let agentIdx: u32 = id.x;
-    let randomState: u32 = num_workgroups.x * id.x;
-
-    let randomRadius = random(randomState) * f32(settings.dimY) * 0.4;
-    let randomAngle = random(randomState * 2u) * TAU;
-
-    let randomPosition = vec2<f32>(f32(settings.dimX) / 2.0, f32(settings.dimY) / 2.0) + vec2<f32>(cos(randomAngle), sin(randomAngle)) * randomRadius;
-
-    storageBarrier();
-
-    agents[agentIdx] = vec3<f32>(randomPosition.x, randomPosition.y, randomAngle - PI);
 }
 
 @compute @workgroup_size(16, 1, 1)

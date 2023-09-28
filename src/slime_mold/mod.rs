@@ -8,17 +8,26 @@ pub mod buffers;
 pub mod ui;
 
 
-// const TEXTURE_SIZE: (u32, u32) = (3840, 2160);
 pub const TEXTURE_SIZE: (u32, u32) = (2560, 1440);
-// const TEXTURE_SIZE: (u32, u32) = (1280, 720);
-pub const NUM_AGENTS: u32 = 500_000;
-pub const WORKGROUP_SIZE: u32 = 8;
+pub const NUM_AGENTS: u32 = 1_000_000;
+pub const TEX_WORKGROUP_SIZE: u32 = 8;
+pub const AGENTS_WORKGROUP_SIZE: u32 = 16;
+pub const INITIAL_STATE: &str = "initAgentsInwardRing";
+
+
+#[derive(States, Default, Debug, Hash, Eq, PartialEq, Clone)]
+pub enum SimulationState {
+    #[default]
+    Uninitialized,
+    Started,
+}
 
 
 pub struct SlimeMoldComputePlugin;
 
 impl Plugin for SlimeMoldComputePlugin {
     fn build(&self, app: &mut App) {
+        app.add_state::<SimulationState>();
         app.add_systems(Startup, setup_texture);
         app.add_plugins(ExtractResourcePlugin::<SlimeMoldImage>::default());
 
@@ -27,6 +36,7 @@ impl Plugin for SlimeMoldComputePlugin {
             .init_resource::<SettingsBuffer>()
             .init_resource::<Time>()
             .init_resource::<UISettings>()
+            .add_state::<SimulationState>()
             .add_systems(ExtractSchedule, (extract_time, extract_ui_settings))
             .add_systems(Render, prepare_settings_buffer.in_set(RenderSet::Prepare))
             .add_systems(Render, queue_bind_group.in_set(RenderSet::Queue));

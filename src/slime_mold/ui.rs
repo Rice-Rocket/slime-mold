@@ -24,24 +24,28 @@ pub struct UISettings {
 
     pub color_a: [f32; 3],
     pub color_b: [f32; 3],
+
+    pub running: bool,
 }
 
 impl Default for UISettings {
     fn default() -> Self {
         Self {
-            move_speed: 50.0,
+            move_speed: 100.0,
             turn_speed: 10.0,
 
             trail_weight: 50.0,
             decay_rate: 0.25,
             diffuse_rate: 5.0,
 
-            sensor_angle_spacing: 2.0,
+            sensor_angle_spacing: 15.0,
             sensor_offset_dst: 15.0,
             sensor_size: 3,
 
-            color_a: [1.0, 0.0, 0.0],
-            color_b: [0.0, 0.0, 1.0],
+            color_a: [1.0, 1.0, 1.0],
+            color_b: [0.0, 0.0, 0.0],
+
+            running: false,
         }
     }
 }
@@ -51,6 +55,7 @@ pub fn ui_update(
     mut contexts: EguiContexts,
     mut ui_visibility: ResMut<UIVisibility>,
     keyboard: Res<Input<KeyCode>>,
+    time: Res<Time>,
     mut settings: ResMut<UISettings>,
 ) {
     if keyboard.just_pressed(KeyCode::Tab) {
@@ -62,6 +67,11 @@ pub fn ui_update(
     if ui_visibility.clone() == UIVisibility::Hidden { return; }
 
     egui::Window::new("Settings").show(contexts.ctx_mut(), |ui| {
+        ui.label(format!("FPS: {:.1}", 1.0 / time.delta_seconds()));
+        ui.label("Press [TAB] to Toggle UI");
+
+        ui.separator();
+
         ui.add(egui::widgets::DragValue::new(&mut settings.move_speed).prefix("Move Speed: ").speed(0.1));
         ui.add(egui::widgets::DragValue::new(&mut settings.turn_speed).prefix("Turn Speed: ").speed(0.02));
 
@@ -83,5 +93,15 @@ pub fn ui_update(
         egui::widgets::color_picker::color_edit_button_rgb(ui, &mut settings.color_a);
         ui.label("Secondary Color");
         egui::widgets::color_picker::color_edit_button_rgb(ui, &mut settings.color_b);
+
+        ui.separator();
+
+        let button_text = match settings.running {
+            true => "Pause Simulation",
+            false => "Run Simulation",
+        };
+        if ui.button(button_text).clicked() {
+            settings.running = !settings.running;
+        }
     });
 }

@@ -2,7 +2,7 @@ use std::borrow::Cow;
 
 use bevy::{prelude::*, render::{render_resource::{BindGroup, BindGroupDescriptor, BindGroupEntry, BindingResource, BindGroupLayout, CachedComputePipelineId, BindGroupLayoutDescriptor, BindGroupLayoutEntry, ShaderStages, BindingType, StorageTextureAccess, TextureFormat, TextureViewDimension, BufferBindingType, BufferSize, PipelineCache, ComputePipelineDescriptor, CachedPipelineState, ComputePassDescriptor}, render_asset::RenderAssets, renderer::{RenderDevice, RenderContext}, render_graph}};
 
-use super::{NUM_AGENTS, WORKGROUP_SIZE, TEXTURE_SIZE, texture::SlimeMoldImage, buffers::{SlimeMoldAgentsBuffer, SettingsBuffer}};
+use super::{NUM_AGENTS, TEX_WORKGROUP_SIZE, AGENTS_WORKGROUP_SIZE, TEXTURE_SIZE, texture::SlimeMoldImage, buffers::{SlimeMoldAgentsBuffer, SettingsBuffer}, ui::UISettings, INITIAL_STATE};
 
 
 #[derive(Resource)]
@@ -116,7 +116,7 @@ impl FromWorld for SlimeMoldPipeline {
             push_constant_ranges: Vec::new(),
             shader: shader.clone(),
             shader_defs: vec![],
-            entry_point: Cow::from("initAgents"),
+            entry_point: Cow::from(INITIAL_STATE),
         });
         let update_agents_pipeline = pipeline_cache.queue_compute_pipeline(ComputePipelineDescriptor {
             label: None,
@@ -149,6 +149,7 @@ impl FromWorld for SlimeMoldPipeline {
 enum SlimeMoldState {
     Loading,
     Init,
+    Waiting,
     Update,
 }
 
@@ -181,10 +182,23 @@ impl render_graph::Node for SlimeMoldNode {
                 if let CachedPipelineState::Ok(_) =
                     pipeline_cache.get_compute_pipeline_state(pipeline.update_agents_pipeline)
                 {
-                    self.state = SlimeMoldState::Update;
+                    self.state = SlimeMoldState::Waiting;
                 }
             }
-            SlimeMoldState::Update => {}
+            SlimeMoldState::Waiting => {
+                if let Some(ui_settings) = world.get_resource::<UISettings>() {
+                    if ui_settings.running {
+                        self.state = SlimeMoldState::Update;
+                    }
+                }
+            }
+            SlimeMoldState::Update => {
+                if let Some(ui_settings) = world.get_resource::<UISettings>() {
+                    if !ui_settings.running {
+                        self.state = SlimeMoldState::Waiting;
+                    }
+                }
+            }
         }
     }
 
@@ -216,20 +230,21 @@ impl render_graph::Node for SlimeMoldNode {
                         .get_compute_pipeline(pipeline.init_pipeline)
                         .unwrap();
                     pass.set_pipeline(init_pipeline);
-                    pass.dispatch_workgroups(NUM_AGENTS / (WORKGROUP_SIZE * 2), 1, 1);
+                    pass.dispatch_workgroups(NUM_AGENTS / AGENTS_WORKGROUP_SIZE, 1, 1);
                 }
+                SlimeMoldState::Waiting => {}
                 SlimeMoldState::Update => {
                     let update_agents_pipeline = pipeline_cache
                         .get_compute_pipeline(pipeline.update_agents_pipeline)
                         .unwrap();
                     pass.set_pipeline(update_agents_pipeline);
-                    pass.dispatch_workgroups(NUM_AGENTS / (WORKGROUP_SIZE * 2), 1, 1);
+                    pass.dispatch_workgroups(NUM_AGENTS / AGENTS_WORKGROUP_SIZE, 1, 1);
 
                     let update_trailmap_pipeline = pipeline_cache
                         .get_compute_pipeline(pipeline.update_trailmap_pipeline)
                         .unwrap();
                     pass.set_pipeline(update_trailmap_pipeline);
-                    pass.dispatch_workgroups(TEXTURE_SIZE.0 / WORKGROUP_SIZE, TEXTURE_SIZE.1 / WORKGROUP_SIZE, 1);
+                    pass.dispatch_workgroups(TEXTURE_SIZE.0 / TEX_WORKGROUP_SIZE, TEXTURE_SIZE.1 / TEX_WORKGROUP_SIZE, 1);
                 }
             }
         }

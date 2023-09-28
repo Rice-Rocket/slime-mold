@@ -28,7 +28,7 @@ fn main() {
             DefaultPlugins.set(WindowPlugin {
                 primary_window: Some(Window {
                     // uncomment for unthrottled FPS
-                    // present_mode: bevy::window::PresentMode::AutoNoVsync,
+                    present_mode: bevy::window::PresentMode::AutoNoVsync,
                     title: String::from("Physarum (Slime Mold)"),
                     ..default()
                 }),
