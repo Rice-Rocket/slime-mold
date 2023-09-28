@@ -1,5 +1,6 @@
 mod slime_mold;
-use slime_mold::*;
+use bevy_egui::EguiPlugin;
+use slime_mold::{*, ui::{ui_update, UIVisibility, UISettings}};
 
 
 #[allow(unused_imports)]
@@ -21,6 +22,8 @@ use bevy::{
 fn main() {
     App::new()
         .insert_resource(ClearColor(Color::BLACK))
+        .init_resource::<UIVisibility>()
+        .init_resource::<UISettings>()
         .add_plugins((
             DefaultPlugins.set(WindowPlugin {
                 primary_window: Some(Window {
@@ -30,9 +33,11 @@ fn main() {
                     ..default()
                 }),
                 ..default()
-            }).set(ImagePlugin::default_nearest()),
+            }).set(ImagePlugin::default_linear()),
             SlimeMoldComputePlugin,
+            EguiPlugin,
         ))
+        .add_systems(Update, ui_update)
         .run();
 }
 

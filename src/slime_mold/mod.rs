@@ -1,16 +1,17 @@
 use bevy::{prelude::*, render::{extract_resource::ExtractResourcePlugin, RenderApp, Render, render_graph::RenderGraph, RenderSet}};
 
-use self::{texture::{SlimeMoldImage, setup_texture}, buffers::{SettingsBuffer, extract_time, prepare_settings_buffer, SlimeMoldAgentsBuffer}, compute::{queue_bind_group, SlimeMoldNode, SlimeMoldPipeline}};
+use self::{texture::{SlimeMoldImage, setup_texture}, buffers::{SettingsBuffer, extract_time, prepare_settings_buffer, SlimeMoldAgentsBuffer, extract_ui_settings}, compute::{queue_bind_group, SlimeMoldNode, SlimeMoldPipeline}, ui::UISettings};
 
 pub mod compute;
 pub mod texture;
 pub mod buffers;
+pub mod ui;
 
 
 // const TEXTURE_SIZE: (u32, u32) = (3840, 2160);
 pub const TEXTURE_SIZE: (u32, u32) = (2560, 1440);
 // const TEXTURE_SIZE: (u32, u32) = (1280, 720);
-pub const NUM_AGENTS: u32 = 200_000;
+pub const NUM_AGENTS: u32 = 500_000;
 pub const WORKGROUP_SIZE: u32 = 8;
 
 
@@ -20,12 +21,13 @@ impl Plugin for SlimeMoldComputePlugin {
     fn build(&self, app: &mut App) {
         app.add_systems(Startup, setup_texture);
         app.add_plugins(ExtractResourcePlugin::<SlimeMoldImage>::default());
-        
+
         let render_app = app.sub_app_mut(RenderApp);
         render_app
             .init_resource::<SettingsBuffer>()
             .init_resource::<Time>()
-            .add_systems(ExtractSchedule, extract_time)
+            .init_resource::<UISettings>()
+            .add_systems(ExtractSchedule, (extract_time, extract_ui_settings))
             .add_systems(Render, prepare_settings_buffer.in_set(RenderSet::Prepare))
             .add_systems(Render, queue_bind_group.in_set(RenderSet::Queue));
         

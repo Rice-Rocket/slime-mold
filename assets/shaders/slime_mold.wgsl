@@ -24,6 +24,9 @@ struct SettingsUniform {
     sensorAngleSpacing: f32,
     sensorOffsetDst: f32,
     sensorSize: i32,
+
+    colorA: vec4<f32>,
+    colorB: vec4<f32>,
 // #ifdef SIXTEEN_BYTE_ALIGNMENT
 //     _padding: vec3<f32>,
 // #endif
@@ -133,7 +136,7 @@ fn updateAgents(@builtin(global_invocation_id) id: vec3<u32>) {
         let oldTrail = textureLoad(trailMap, location);
 
         storageBarrier();
-        textureStore(trailMap, location, min(vec4<f32>(1.0), oldTrail + settings.trailWeight * settings.deltaTime));
+        textureStore(trailMap, location, min(settings.colorA, oldTrail + settings.trailWeight * settings.deltaTime));
     }
     storageBarrier();
     agents[id.x] = vec3<f32>(newPos.x, newPos.y, newAngle);
@@ -149,7 +152,7 @@ fn updateTrailmap(@builtin(global_invocation_id) id: vec3<u32>) {
     // }
 
     var sum = 0.0;
-    let oldColor = textureLoad(trailMap, location);
+    let oldColor = textureLoad(trailMap, location).w;
 
     for (var offsetX = -1; offsetX <= 1; offsetX++) {
         for (var offsetY = -1; offsetY <= 1; offsetY++) {
@@ -162,7 +165,9 @@ fn updateTrailmap(@builtin(global_invocation_id) id: vec3<u32>) {
     let blurred = sum / 9.0;
     let diffuseWeight = saturate(settings.diffuseRate * settings.deltaTime);
     let finalBlurred = oldColor * (1.0 - diffuseWeight) + blurred * diffuseWeight;
+    let finalValue = finalBlurred - settings.decayRate * settings.deltaTime;
+    let finalCol = settings.colorB + (settings.colorA - settings.colorB) * max(0.0, min(1.0, finalValue));
 
     storageBarrier();
-    textureStore(trailMap, location, max(vec4<f32>(0.0), finalBlurred - settings.decayRate * settings.deltaTime));
+    textureStore(trailMap, location, vec4<f32>(finalCol.xyz, max(0.0, finalValue)));
 }
